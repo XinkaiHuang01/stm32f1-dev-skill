@@ -3,7 +3,8 @@
 # stm32f1-dev
 
 ### AI 写的 STM32 代码跑不起来？这个 Skill 让它一次编译通过。
-
+> [!提示]
+> 这是一个stm32初学者适用的agent skill，能解决大部分培训初期的项目
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 [快速开始](#快速开始) · [工作原理](#工作原理) · [编码规范](#编码规范) · [评估测试](#评估测试)
