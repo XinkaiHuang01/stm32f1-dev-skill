@@ -1,0 +1,8 @@
+-I..\Lib\Core
+-I..\Lib\STM32F10x_StdPeriph_Driver\inc
+-I..\User
+-DSTM32F10X_MD
+-DUSE_STDPERIPH_DRIVER
+--target=arm-none-eabi
+-mcpu=cortex-m3
+-mthumb

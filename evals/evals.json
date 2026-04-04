@@ -1,0 +1,35 @@
+{
+  "skill_name": "stm32f1-dev",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "/stm32",
+      "expected_output": "AI必须询问用户芯片型号（如STM32F103C8T6），解释Skill职能，并且【强制声明】此工程模板默认强依赖并锁定 ARM Compiler 5 (AC5) 编译器，提醒确保环境中已安装。回复末尾附带：已按照 stm32f1-dev 生成。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "我要新建一个名为 TestProj 的 STM32F103C8T6 裸机工程",
+      "expected_output": "禁止凭空生成.uvprojx文件，必须调用指令去物理拷贝 assets/Template/ 下的原生Keil模板和 compile_flags.txt 到工作区，并复制 assets/Lib/ 标准库。需向用户反馈文件拷贝成功状态。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "帮我写一个底层的按键(KEY)模块",
+      "expected_output": "AI首先必须主动询问用户预期的引脚。其生成的按键代码必须采用外部中断(EXTI)机制而非死循环轮询，并且在处理逻辑中必须带有软件/硬件消抖(Debounce)算法。完成生成后应调用 add_module.py 将此模块安全注入 Keil xml 中。",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "引入官方资产里的 OLED 模块",
+      "expected_output": "AI在复制 assets/APP/OLED/ 后，必须主动反向询问用户屏幕是否为标准的 0.96寸/1.3寸 (128x64分辨率)，提醒若尺寸不同则需要改写底层代码。此外提示占用的 IIC 引脚。",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "我在main.c里改了主循环代码，帮我收尾",
+      "expected_output": "AI修改完代码后，绝对不能直接交差。必须在环境底层调用 Keil 命令行(类似于 UV4.exe -b User\\Project.uvprojx -o build_log.txt)发起自动编译测试，并宣称通过检查编译日志查看到 0 Errors 后再向用户汇报竣工。",
+      "files": []
+    }
+  ]
+}
