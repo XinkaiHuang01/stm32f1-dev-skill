@@ -1,6 +1,6 @@
 ---
 name: stm32f1-dev
-description: Create, modify, and manage STM32F1 microcontroller projects adhering strictly to the general engineering rules. Trigger this skill ALWAYS when the user mentions STM32, STM32F1, Cortex-M3, bare-metal C, embedded systems, Keil, MDK, standard peripheral library, OLED, LED, timer, interrupts, or when they ask to create a new module/project. Use this skill proactively for any embedded C file generation.
+description: Create, modify, and manage STM32F1 microcontroller projects with Keil MDK, ARM Compiler 5, Standard Peripheral Library, scripted project operations, contest PDF requirement extraction, hardware confirmation, and compile verification. Trigger this skill ALWAYS when the user mentions STM32F1, Cortex-M3, Keil, MDK, standard peripheral library, electronic design contest problems, contest PDFs, bare-metal C, OLED, LED, timer, interrupts, or asks to create/modify an STM32F1 project or module. Use this skill proactively for embedded C generation that targets STM32F1 + Keil + StdPeriph.
 ---
 
 # STM32F1 单片机开发指南 (AI通用工程规则)
@@ -10,6 +10,7 @@ This skill provides comprehensive rules for STM32F1 Microcontroller development,
 ## 1. 原则与技术栈 (Core Principles & Tech Stack)
 *   **语言约定**: 回复、说明、注释、文档**必须使用简体中文**。代码标识符使用完全纯正英文（禁止拼音及中英混杂），错误信息/日志可使用英文。
 *   **技术选型**: **所有 STM32 相关代码必须使用标准库函数 (Standard Peripheral Library)**。**严禁使用 HAL 库或 LL 库**。
+*   **CLI 定位**: 本 Skill 的 CLI 能力只用于自动化 Keil/标准库工程（模板复制、模块注入、编译验证、日志解析），**不代表切换到 CMake/HAL/CubeMX 工作流**。
 *   **外设与驱动**: 为每个外设或功能完全独立创建 `.c` 和 `.h` 文件。
 *   **复用原则**: 如果用户已经有了相同功能的代码，直接复用不需重新生成。
 
@@ -39,6 +40,20 @@ This skill provides comprehensive rules for STM32F1 Microcontroller development,
    - 并在必要时，修改 `compile_flags.txt` 及 `.uvprojx`。
 4. **禁止直接删除模块**：发现不需要的外设驱动或代码时，必须询问用户是否同意删除，严禁擅自删除。
 
+### 脚本化执行原则
+能用脚本完成的重复性工程操作，优先调用 Skill 自带脚本；不要手写大段 XML、不要靠记忆拼接复杂路径。
+
+当前已绑定脚本：
+- `assets/scripts/add_module.py`: 将模块 `.c` 文件和 include 路径安全注入 `User/工程名.uvprojx` 与 `compile_flags.txt`。
+
+建议后续扩展但未绑定时，仍按同样职责边界设计脚本：
+- `detect_keil.py`: 检测 `UV4.exe`、AC5 编译器与 Keil 安装位置。
+- `create_project.py`: 从 `assets/Template/` 复制模板并重命名工程文件。
+- `build_keil.py`: 包装 `UV4.exe -b`，输出并解析 `build_log.txt`。
+- `flash_stlink.py`: 可选封装 ST-Link/J-Link/STM32_Programmer_CLI 烧录流程。
+
+调用脚本前必须先用命令定位本 Skill 的物理目录，不要写死 `~/.codex/skills/...` 或某个临时路径。
+
 ## 3. 编码风格规范 (Coding Style)
 ### 3.1 格式与排版
 *   **缩进与单行长度**: 使用 **4个空格**，严禁使用 Tab。代码长度建议不超过 120 字符。
@@ -65,27 +80,81 @@ This skill provides comprehensive rules for STM32F1 Microcontroller development,
 *   **中断服务**: 必须使用汇编启动文件中规定的命名，如 `TIM3_IRQHandler`。中断函数忌复杂逻辑（例如严禁使用 printf、delay 操作）。
 
 ## 4. AI 工作流特殊强制要求
-### 4.1 `/stm32` 触发指引工作流
+### 4.1 赛题 PDF 前置解析流程
+当用户在项目开始前提供、上传、指向或提到电子设计竞赛/课程设计/训练题 PDF 时，必须先解析赛题，再创建工程或写代码。
+
+执行方式：
+1. **主 Agent 负责解析落盘**：主 Agent 必须先使用 MinerU 解析 PDF，并把解析结果保存到当前工作目录下的 `work/contest-analysis/<题目名>/`。至少保存：
+   - `source.txt`: PDF 原始路径、页数、解析时间、解析方式。
+   - `parsed.md`: MinerU 或降级 OCR 得到的题面 Markdown/文本。
+   - `parse_notes.md`: 解析质量、OCR 可疑处、失败重试记录。
+2. **解析失败降级**：如果 MinerU 解析失败、服务断连、OCR 质量明显不足，主 Agent 必须如实记录到 `parse_notes.md`，并尝试本地 OCR 或其他可用文档解析工具继续提取；仍无法可靠读取时，要求用户提供更清晰 PDF/图片或关键页截图。不能在未读清题面的情况下开始工程。
+3. **子 Agent 读取落盘结果**：当运行环境支持 subagent 时，主 Agent 在解析落盘后启动只读 subagent，并只把 `work/contest-analysis/<题目名>/` 目录作为输入。subagent 读取 `parsed.md`、`source.txt`、`parse_notes.md`，输出结构化“单片机开发要求摘要”，不得重新解析 PDF，不得修改工程文件。
+4. **无 subagent 时回退执行**：如果当前环境没有 subagent 能力，主 Agent 读取同一批落盘文件并完成结构化摘要；不能跳过赛题阅读。
+5. **解析范围**：提取所有与单片机代码开发相关的内容，包括控制目标、运行状态、输入输出、外设模块、传感器/执行器、显示/按键/通信、ADC/DAC/PWM、自动调节、采样频率、定时精度、误差指标、报警/保护、上电流程、测试步骤、评分点和禁止事项。
+6. **输出需求基线**：在动手建工程前，必须形成一份“单片机开发要求摘要”。优先复制并填充本 Skill 的唯一模板 `assets/Templates/mcu_requirements_template.md`，保存为 `work/contest-analysis/<题目名>/mcu_requirements.md`。必须只保留题面明确要求或可强推断的外设章节；未启用的 OLED、KEY、ADC、DAC、PWM、PID、USART 等章节必须删除或标为“不启用”，不能为了模板完整而默认加入。如果无法复制模板，也必须按同等章节结构输出，至少包含：
+   - 状态机：系统至少有哪几种状态（如初始化、待机、测量、调节、报警、校准、故障），每种状态的进入条件、退出条件、执行任务。
+   - 外设需求：赛题能明确推断的外设功能（如定时器、USART、OLED、KEY、ADC、DAC、PWM、输入捕获、编码器、蜂鸣器等）；芯片型号、实际启用外设实例和真实引脚通常由用户/硬件电路决定，若赛题未指定必须标为“待用户确认”。
+   - 按键功能：如果存在按键，逐个列出每个按键的功能、触发方式（短按/长按/连按）、所属状态、消抖需求和是否需要 EXTI。
+   - OLED/显示需求：如果存在 OLED 或其他显示，列出需要显示的内容、数据换算公式、单位、小数位、刷新周期、界面数量、每个界面的字段、界面切换方式。
+   - ADC/DAC 要求：如果存在 ADC 或 DAC，根据赛题精度、量程和误差要求推导分辨率需求，说明建议位数、参考电压、采样周期、滤波/平均策略；无法确定的硬件量程、分压比、运放增益、基准电压标为“硬件参数待确认”。
+   - 自动调节/PID：如果需要自动调节，说明控制目标、反馈量、输出量、控制周期、限幅、积分抗饱和、初始 `Kp/Ki/Kd` 预设值和用户后续整定入口。
+   - PWM/定时要求：如果需要 PWM，列出频率、占空比分辨率、通道数量、输出极性、计数周期、预分频/ARR/CCR 的计算关系和用户需确认的硬件连接。
+   - 硬件参数修改入口：由硬件电路设计决定的参数必须集中列出，并在代码设计中放入清晰的配置入口（如 `APP/Config/board_config.h` 或模块头文件宏）。先用安全预设值完成工程，最后提示用户按实际电路修改。典型参数包括 HSE 频率、Vref、ADC 分压比、传感器灵敏度、零点偏置、放大倍数、DAC 输出量程、PWM 负载极性、OLED I2C 引脚、串口波特率。
+   - 软件功能：主循环任务、中断任务、定时任务、显示任务、按键任务、通信协议、数据换算和异常处理；若赛题要求“禁用预存数据”，必须明确所有测量、计算和查表边界，禁止用预存测试结果替代实时测量。
+   - 数据计算公式：列出有效值、频率、增益、相位差、误差百分比、ADC 原始值到物理量、DAC/PWM 设定值到输出量的换算关系；无法由赛题确定的比例系数必须放入硬件参数修改入口。
+   - 实时与精度要求：采样周期、PWM/定时频率、测量误差、响应时间。
+   - 验收与评分点：赛题中的测试方法、指标和加分项；若赛题按 a/b/c/d/e 等步骤评分，必须逐项映射到软件功能、所需外设、显示内容和测试数据。
+   - 与 `stm32f1-dev` 工程的映射：建议创建或复用的 `APP/模块/` 清单，以及每个模块的职责。
+7. **冲突与缺口确认**：主 Agent 必须根据摘要向用户确认赛题未明确但会影响代码的关键信息。尤其要确认芯片型号、启用哪些外设实例、真实引脚、晶振频率、调试器、屏幕尺寸、通信波特率、ADC/DAC 参考电压与外部电路比例、PWM 负载特性。若 OCR 结果、题面不同段落或评分步骤之间存在矛盾（如频率步进、目标电压、误差指标不一致），必须列为“题面冲突/需用户确认”，不要擅自选一个。只有这些信息不足以安全生成工程或会导致硬件冲突时才阻断等待。
+8. **需求冻结**：用户确认后，后续工程创建、模块生成和编译验证都以 `mcu_requirements.md` 或等价摘要作为需求基线。若后续代码实现与赛题摘要冲突，必须优先修正实现或向用户说明取舍。
+
+### 4.2 `/stm32` 触发指引工作流
 当用户通过 `/stm32` 触发使用本 skill 或要求新建项目时，必须严格按以下顺序进行交互：
-1. **询问型号与介绍**: 询问用户所需开发的具体芯片型号（例如 STM32F103C8T6 等），并向用户简明扼要地介绍本 Skill 的使用方式及职能。**注意：你必须在最初的介绍中向用户进行“免责或前置声明”：明确告知用户此工程模板默认强依赖并锁定 ARM Compiler 5 (AC5) 编译器内核，提醒使用者确保本地 Keil 中已备有该版本编译器。**
-2. **阻断等待**: 必须等待用户回复确认芯片型号。
-3. **执行创建与情况反馈**: 用户确认并在完成工程创建后，你必须按以下逻辑创建文件：
+1. **说明边界与依赖**: 简要说明本 Skill 固定服务于 STM32F1 + Keil MDK + ARM Compiler 5 (AC5) + 标准外设库工程。明确告知模板默认依赖并锁定 AC5，提醒用户确认本地 Keil 已安装该编译器。
+2. **赛题优先**: 如果用户提供了赛题 PDF 或题目文档，必须先执行“赛题 PDF 前置解析流程”；解析摘要中已明确的信息不要重复追问。
+3. **硬件确认清单**: 创建或大改工程前，必须逐项确认以下信息；用户或赛题摘要已明确给出的项目不要重复追问。
+   - 芯片完整型号：例如 `STM32F103C8T6`、`STM32F103RCT6`、`STM32F103ZET6`。
+   - 工程名称、存放位置、Keil 工程文件名。
+   - 开发板或最小系统信息，尤其是外部晶振频率（如 HSE 8MHz）与供电方式。
+   - 调试/烧录器：ST-Link、J-Link 或其他。
+   - 需要启用的外设模块，以及每个外设的真实引脚、速率、工作模式。
+   - 是否需要串口日志、OLED 显示、按键输入等调试辅助。
+4. **阻断等待**: 缺少芯片型号、工程位置、工程名、Keil 工程文件名时必须等待用户确认；涉及真实硬件引脚且无法从上下文安全推断时也必须等待确认。
+5. **配置优先创建**: 用户确认后，先完成工程骨架和配置文件，再写应用逻辑：
    - 对于 Keil 的核心工程文件（`.uvprojx` / `.uvoptx`）和 `compile_flags.txt`：**绝对禁止**你凭空生成这些复杂的 XML/配置 文件！你必须直接从本 Skill 绑定的 `assets/Template/` 下将对应的模板工程原原本本地拷贝过去，然后重命名为用户要求的工程名。
    - 拷入基础库：将 `assets/Lib/` 复制过去。
-   - 创建后向用户详细反馈创建状态。
-   - 环境配置文件（`compile_flags.txt`）状态
-4. **Keil 内部纯人工操作提示**: 告诉用户哪些配置是 AI 无法完成，必须在 Keil 软件中手动进行的（例如：在设 Target 选项卡勾选 Use MicroLIB，在 C/C++ 选项卡添加预编译宏 `STM32F10X_MD,USE_STDPERIPH_DRIVER` 以及将 Debug 替换为实际调试器如 J-Link/ST-Link 并勾选 Reset and Run 等）。
+   - 先确认 `.uvprojx`、`.uvoptx`、`compile_flags.txt`、`Lib/`、`User/`、`APP/` 均落位，再进入模块或业务代码生成。
+6. **情况反馈**: 创建后向用户反馈工程骨架、标准库、模板工程文件、`compile_flags.txt` 的状态；如果某项无法完成，要说明原因和已保留的文件状态。
+7. **Keil 内部纯人工操作提示**: 告诉用户哪些配置是 AI 无法完成，必须在 Keil 软件中手动进行的（例如：在设 Target 选项卡勾选 Use MicroLIB，在 C/C++ 选项卡添加预编译宏 `STM32F10X_MD,USE_STDPERIPH_DRIVER` 以及将 Debug 替换为实际调试器如 J-Link/ST-Link 并勾选 Reset and Run 等）。
 
-### 4.2 通用规约
+### 4.3 通用规约
 - **新建工程前置询问**：任何情境下新建工程，必须先确认工程名称、存放位置及 Keil 工程文件名，不要盲目凭空编造直接写文件。
-### 4.3 引脚分配与配置交互约束
+- **现有工程识别优先**：当当前目录或用户指定路径已经存在 `User/*.uvprojx`、`compile_flags.txt`、`APP/`、`Lib/` 时，必须优先按现有工程处理。先读取工程结构、`.uvprojx`、`compile_flags.txt` 和已有模块，自动推断工程名、芯片宏、include path、已注册源文件和现有外设；不得重新触发完整新建工程问卷。只询问无法从工程中可靠推断、且会影响硬件安全或工程配置的信息。
+- **先配置、后代码、再验证**：所有新增功能都必须按 `硬件确认 → 模板/配置落位 → 脚本注入工程 → 生成或复用模块代码 → 编译验证 → 汇报` 的顺序推进。不要先写 `main.c` 或外设代码再回头补 `.uvprojx`。
+- **脚本优先**：修改 `.uvprojx`、追加 include path、批量注册模块等操作，必须优先调用本 Skill 绑定脚本；只有脚本缺失或无法覆盖时，才允许使用结构化 XML 解析方式处理，并且必须先备份目标文件。
+- **配置记录**：对自动推断出的默认配置（如 USART1 默认 PA9/PA10、HSE 默认 8MHz）必须在回复中明确声明，便于用户发现硬件冲突。
+
+### 4.4 引脚分配与配置交互约束
 涉及到复用或新建带有硬件引脚依赖的代码模块（如 OLED、按键、串口等）时：
 - 创建或复用这些代码后的第一时间，**必须**主动向用户询问当前需要的真实硬件引脚。
 - 如果该外设的引脚极其固定或可以由用户提供的芯片型号默认得出（例如 USART1 默认使用 PA9/PA10），你需要自动完成配置修改，**但之后必须明确向用户声明**（例如：“我已将 USART1 配置到 PA9/PA10 引脚，如与您的设计冲突请告诉我”）。严格防范用户不知情情况下的引脚资源冲突。
 - **关于按键模块的特殊约束**：当用户要求编写或生成按键（KEY）模块代码时，你**必须**使用硬件的外部中断（EXTI）方式来捕获信号（严禁死循环轮询），并且在中断或处理逻辑中**必须**设计有按键消抖（Debounce）处理机制。
 - **关于 OLED 模块的特殊约束**：自带的 OLED 资产代码默认是适配标准 `128x64` 分辨率的（如常规的 0.96寸 或 1.3寸 SSD1306）。当你为用户配置 OLED 功能时，必须向用户确认“您的屏幕是常见的 0.96寸 / 1.3寸 还是其他特殊尺寸？”。若尺寸或分辨率不同，你必须主动为其修改底层驱动文件中的 `OLED_GRAM` 大小及 Init 初始化序列参数，不可直接盲目套用。
 
-### 4.4 自动化黑盒编译验证与自我修复机制 (Auto-Compile & Self-Correction)
+### 4.5 ADC/DAC/PWM 数据搬运约束
+涉及连续采样、波形生成、有效值测量、相位测量、频率测量或自动调节闭环时，必须优先使用硬件触发与 DMA 搬运，禁止在主循环中逐点轮询采样或逐点刷新输出。
+
+- **ADC 采样**：多点采样、双通道采样、波形采样、RMS/频率/相位测量时，必须优先采用 `TIM 触发 ADC + DMA 环形缓冲`。仅对低速、单次、人工触发的简单电压读取，才允许使用软件触发或轮询方式，并需在回复中说明理由。
+- **ADC 缓冲设计**：DMA 缓冲区必须集中定义清楚采样点数、通道数、半满/全满标志和数据就绪标志；中断中只置位标志或搬运少量状态，RMS/FFT/相位等重计算放到主循环或任务函数中处理。
+- **片上 DAC 主路径**：本 Skill 默认面向常用 `STM32F103RCT6`、`STM32F103ZET6` 等带片上 DAC 的型号。需要模拟量输出或波形输出时，必须优先使用片上 `DAC1/DAC2`，典型引脚为 `PA4(DAC_OUT1)`、`PA5(DAC_OUT2)`；真实引脚仍需按芯片封装和硬件电路确认。
+- **DAC 波形输出**：连续波形、扫频、自动幅度调节等场景必须优先采用 `TIM 触发 DAC + DMA 写入 DHR 寄存器`。DAC 波形表、输出点数、触发定时器、DMA 通道、输出缓冲使能状态必须写清楚；禁止在主循环中逐点调用 `DAC_SetChannel*Data()` 刷新波形。
+- **DAC 慢速设定值**：只有慢速人工调节、闭环控制的低速设定值或单次输出，才允许直接写 DAC 数据寄存器；仍需集中封装为模块接口，不要散落在 `main.c` 中。
+- **PWM 模拟 DAC/波形输出**：PWM+低通滤波只作为无片上 DAC、DAC 引脚被占用或题目/硬件明确要求 PWM 输出时的备选方案。若使用 PWM 生成高频波形，必须优先使用 `TIM PWM + DMA 更新 CCR` 或定时器更新中断分段更新；固定电压或低速控制量可直接更新 CCR。
+- **定时关系**：波形输出与采样必须明确 `timer_clk`、`PSC`、`ARR`、采样点数、DMA 缓冲长度、输出更新率和目标信号频率的关系，并把无法由题面确定的参数放入 `APP/Config/board_config.h`。
+- **资源冲突检查**：生成 ADC/DMA/PWM/DAC 相关模块前，必须确认 DMA 通道、定时器、ADC 通道、DAC 通道、`PA4/PA5`、PWM 通道是否与 OLED、USART、按键 EXTI 或其他模块冲突。
+
+### 4.6 自动化黑盒编译验证与自我修复机制 (Auto-Compile & Self-Correction)
 为了确保不交付存在低级语法错误的半成品，在你为主程序生成代码、修改了现有工程结构或导入了新模块模块文件后，你必须执行“自动编译验证测试”：
 1. **调用编译器**：运用你的命令行在工程根目录下执行 Keil 命令行编译指令（如果你不确定路径可优先尝试常见默认路径并把工程名替换对，如 `C:\Keil_v5\UV4\UV4.exe -b User\Project.uvprojx -j0 -o build_log.txt` ）。
 2. **读盘排查**：在命令执行完成、收到返回响应后，调用工具去读取生成的编译日志 `build_log.txt`。

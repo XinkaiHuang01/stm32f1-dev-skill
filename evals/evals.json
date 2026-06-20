@@ -4,13 +4,13 @@
     {
       "id": 1,
       "prompt": "/stm32",
-      "expected_output": "AI必须询问用户芯片型号（如STM32F103C8T6），解释Skill职能，并且【强制声明】此工程模板默认强依赖并锁定 ARM Compiler 5 (AC5) 编译器，提醒确保环境中已安装。回复末尾附带：已按照 stm32f1-dev 生成。",
+      "expected_output": "AI必须说明本Skill固定服务于 STM32F1 + Keil MDK + ARM Compiler 5 (AC5) + 标准外设库工程，提醒确认本地Keil已安装AC5；随后按硬件确认清单询问芯片型号、工程名称/位置/Keil工程文件名、开发板/晶振、调试器、外设与真实引脚。回复末尾附带：已按照 stm32f1-dev 生成。",
       "files": []
     },
     {
       "id": 2,
       "prompt": "我要新建一个名为 TestProj 的 STM32F103C8T6 裸机工程",
-      "expected_output": "禁止凭空生成.uvprojx文件，必须调用指令去物理拷贝 assets/Template/ 下的原生Keil模板和 compile_flags.txt 到工作区，并复制 assets/Lib/ 标准库。需向用户反馈文件拷贝成功状态。",
+      "expected_output": "AI必须先补问或确认工程存放位置、Keil工程文件名、晶振频率和调试器等硬件/工程信息；确认后禁止凭空生成.uvprojx文件，必须物理拷贝 assets/Template/ 下的原生Keil模板和 compile_flags.txt，并复制 assets/Lib/ 标准库。需先完成工程骨架和配置落位，再生成应用代码，并反馈每项文件状态。",
       "files": []
     },
     {
@@ -29,6 +29,24 @@
       "id": 5,
       "prompt": "我在main.c里改了主循环代码，帮我收尾",
       "expected_output": "AI修改完代码后，绝对不能直接交差。必须在环境底层调用 Keil 命令行(类似于 UV4.exe -b User\\Project.uvprojx -o build_log.txt)发起自动编译测试，并宣称通过检查编译日志查看到 0 Errors 后再向用户汇报竣工。",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "给现有 STM32F103C8T6 工程新增一个 USART1 调试串口模块",
+      "expected_output": "AI必须先识别现有工程结构，读取 User/*.uvprojx、compile_flags.txt、APP/、Lib/ 来推断工程名、已有模块和已注册源文件，不得重新触发完整新建工程问卷。随后确认或声明 USART1 默认 PA9/PA10、波特率、是否占用其他外设；必须先复制或生成 APP/Usart 模块，再调用 assets/scripts/add_module.py 注入 .uvprojx 和 compile_flags.txt，最后再修改 main.c 调用初始化，并执行 Keil CLI 编译验证。",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "我上传了电赛题目的 PDF，先帮我开始 STM32F1 工程",
+      "expected_output": "AI必须在建工程或写代码前，由主 Agent 使用 MinerU 解析赛题 PDF，并将 source.txt、parsed.md、parse_notes.md 保存到 work/contest-analysis/<题目名>/。若 MinerU 失败或 OCR 质量不足，必须如实记录并尝试本地 OCR/其他解析工具，不能未读题面就开始工程。随后若环境支持 subagent，派发只读 subagent 读取这些落盘文件，并按唯一模板 assets/Templates/mcu_requirements_template.md 填充生成 mcu_requirements.md；没有 subagent 时由主 Agent 读取同一批文件完成。摘要必须只保留题面明确要求或可强推断的外设章节，未启用的 OLED、KEY、ADC、DAC、PWM、PID、USART 等不能为了模板完整而默认加入。必须提取完整单片机开发要求，包括状态机、启用外设、按键功能、OLED显示内容/换算/界面、ADC/DAC位数与参考电压、PID控制周期和参数入口、PWM频率/占空比分辨率、实时/精度指标、评分步骤映射、APP模块映射，以及由硬件电路决定的参数修改入口和安全预设值。芯片型号、外设实例和真实引脚若赛题未指定，必须标为用户/硬件确认项。若题面或OCR存在频率步进、目标电压、误差指标等冲突，必须列为待确认项，不能擅自选择。",
+      "files": []
+    },
+    {
+      "id": 8,
+      "prompt": "帮我写一个采集两路模拟信号并输出波形的模块",
+      "expected_output": "AI必须优先采用 TIM 触发 ADC + DMA 环形缓冲实现多点/多通道采样，明确采样点数、通道数、DMA半满/全满标志和数据就绪标志，禁止在主循环中逐点轮询ADC。对 STM32F103RCT6/ZET6 等常用型号，模拟量/波形输出必须优先使用片上 DAC1/DAC2，典型引脚 PA4/PA5，并采用 TIM 触发 DAC + DMA 写入 DHR；禁止主循环逐点调用 DAC_SetChannel*Data 刷新波形。只有片上DAC不可用、DAC引脚被占用或硬件明确要求PWM时，才允许采用 PWM+低通滤波，并优先使用 TIM PWM + DMA 更新 CCR。必须确认 DMA通道、ADC通道、DAC通道、PA4/PA5、定时器、PWM通道和其他外设是否冲突；只有低速单次读取或慢速人工设定量才允许说明理由后不用DMA。",
       "files": []
     }
   ]
